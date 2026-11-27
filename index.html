@@ -77,6 +77,9 @@ button{font-family:inherit}
   color:var(--white); font:500 16px var(--font); outline:none; transition:border-color .2s}
 .field::placeholder{color:var(--g2)}
 .field:focus{border-color:var(--sky)}
+.field.err{border-color:#ff8a8a; animation:shake .35s}
+@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.err-hint{font-size:13px; color:#ffb4b4; margin:-4px 2px 2px}
 .btn{appearance:none; border:0; border-radius:16px; padding:18px 20px; font:700 16px var(--font); cursor:pointer; width:100%;
   background:var(--white); color:var(--navy); display:flex; align-items:center; justify-content:center; gap:10px;
   transition:transform .15s, box-shadow .2s; box-shadow:0 10px 30px -10px rgba(178,220,246,.6)}
@@ -183,6 +186,7 @@ button{font-family:inherit}
     <div class="depts" id="deptGrid"></div>
     <div class="form">
       <input id="name" class="field" type="text" placeholder="Имя и фамилия" autocomplete="name">
+      <div class="err-hint hidden" id="nameHint">Напиши имя и фамилию, чтобы мы увидели твой результат</div>
       <button class="btn" id="go">Начать тест <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       <div class="hint">Правильных ответов нет: отвечай так, как есть на самом деле</div>
     </div>
@@ -298,7 +302,10 @@ const Q = [
 const OPTS = [["Точно про меня",4],["Скорее да",3],["Не знаю",2],["Скорее нет",1],["Совсем не про меня",0]];
 const MAX = 4;
 
-let i = 0, ans = new Array(Q.length).fill(null), person = "", lock = false;
+// Ссылка веб-приложения Apps Script (…/exec). Пусто — результаты никуда не отправляются.
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw0x8033Bi-IJPdHjckfonlHx_n3ARnLWQPqzXqKVoAEGN9BXbvjiUDWL51burs8rUouA/exec";
+
+let i = 0, ans = new Array(Q.length).fill(null), person = "", lock = false, sent = false;
 const $ = id => document.getElementById(id);
 const show = id => { ["start","quiz","result"].forEach(s => $(s).classList.toggle("hidden", s!==id)); window.scrollTo(0,0); };
 const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -384,10 +391,24 @@ function finish(){
   radar(res, top.k);
   countUp($("topPct"), top.pct);
   setTimeout(()=>document.querySelectorAll("#rows .tr i").forEach(el=>el.style.width=el.dataset.w+"%"), 150);
-  // TODO: отправка (person, ans, res) в общую таблицу — когда решим со сбором.
+  send(res, top);
 }
 
-$("go").onclick = () => { person = $("name").value.trim(); i=0; ans.fill(null); show("quiz"); render(true); };
+// Отправка результата в Google-таблицу (Apps Script веб-приложение).
+function send(res, top){
+  if(!SCRIPT_URL || sent) return; sent = true;
+  const header = ["Время","Имя","Лучшее направление", ...DEPTS.map(d=>d.name+", %"), ...Q.map((q,j)=>`${j+1}. ${q[0]}`)];
+  const row = ["", person, top.name, ...res.map(d=>d.pct), ...ans];
+  fetch(SCRIPT_URL, {method:"POST", mode:"no-cors", keepalive:true,
+    headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({header,row})}).catch(()=>{ sent=false; });
+}
+
+$("go").onclick = () => {
+  person = $("name").value.trim();
+  if(person.split(/\s+/).length < 2){ const f=$("name"); f.classList.remove("err"); void f.offsetWidth; f.classList.add("err"); f.focus(); $("nameHint").classList.remove("hidden"); return; }
+  $("nameHint").classList.add("hidden");
+  i=0; ans.fill(null); sent=false; show("quiz"); render(true);
+};
 $("name").addEventListener("keydown", e => { if(e.key==="Enter") $("go").click(); });
 $("back").onclick = () => { if(i>0){ i--; render(true); } };
 $("again").onclick = () => show("start");
